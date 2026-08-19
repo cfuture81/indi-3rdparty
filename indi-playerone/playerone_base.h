@@ -30,6 +30,7 @@
 #include <vector>
 #include <mutex>
 #include <condition_variable>
+#include <atomic>
 
 #include <indiccd.h>
 #include <inditimer.h>
@@ -181,4 +182,9 @@ class POABase : public INDI::CCD
         uint8_t mExposureRetry {0};
         POAImgFormat                      mCurrentVideoFormat;
         std::vector<POAConfigAttributes>  mControlCaps;
+
+        // Streaming exposure target in seconds. Published by the main thread
+        // (ISNewNumber / StartStreaming) and read by the streaming worker, so the
+        // worker never reads the STREAMING_EXPOSURE property widget concurrently.
+        std::atomic<double>               mStreamExposureS { 0.0 };
 };

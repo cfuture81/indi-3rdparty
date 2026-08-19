@@ -56,7 +56,7 @@ const char *POABase::getBayerString() const
 void POABase::workerStreamVideo(const std::atomic_bool &isAbortToQuit)
 {
     POAErrors ret;
-    double lastExposure = 1.0 / Streamer->getTargetFPS();
+    double lastExposure = mStreamExposureS.load(std::memory_order_relaxed);
     double expoS = static_cast<double>(lastExposure * 0.95);
  
     ret = Helpers::SetConfig(mCameraInfo.cameraID, POA_EXP, expoS, POA_FALSE);
@@ -94,7 +94,7 @@ void POABase::workerStreamVideo(const std::atomic_bool &isAbortToQuit)
             continue;
         }
 
-        currentExposure = 1.0 / Streamer->getTargetFPS();
+        currentExposure = mStreamExposureS.load(std::memory_order_relaxed);
         if (currentExposure != lastExposure)
         {
             expoS = static_cast<double>(currentExposure * 0.95);
@@ -797,7 +797,17 @@ bool POABase::ISNewNumber(const char *dev, const char *name, double values[], ch
         }
     }
 
-    return INDI::CCD::ISNewNumber(dev, name, values, names, n);
+    // Apply STREAMING_EXPOSURE (and everything else) in the base class first,
+    // then publish the new target exposure for the streaming worker on this
+    // (main) thread. This keeps the STREAMING_EXPOSURE property widget single-
+    // threaded: the worker reads mStreamExposureS instead of the widget.
+    const bool result = INDI::CCD::ISNewNumber(dev, name, values, names, n);
+
+    if (Streamer && dev != nullptr && !strcmp(dev, getDeviceName()) &&
+            name != nullptr && !strcmp(name, "STREAMING_EXPOSURE"))
+        mStreamExposureS.store(1.0 / Streamer->getTargetFPS(), std::memory_order_relaxed);
+
+    return result;
 }
 
 bool POABase::ISNewSwitch(const char *dev, const char *name, ISState *states, char *names[], int n)
@@ -1087,6 +1097,9 @@ bool POABase::StartStreaming()
         }
     }
 #endif
+    // Publish the current target exposure before the worker starts so it reads
+    // mStreamExposureS rather than the STREAMING_EXPOSURE property widget.
+    mStreamExposureS.store(1.0 / Streamer->getTargetFPS(), std::memory_order_relaxed);
     mWorker.start(std::bind(&POABase::workerStreamVideo, this, std::placeholders::_1));
     return true;
 }
