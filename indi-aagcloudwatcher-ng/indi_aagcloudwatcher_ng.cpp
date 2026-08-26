@@ -317,6 +317,19 @@ bool AAGCloudWatcher::ISNewNumber(const char *dev, const char *name, double valu
                 return true;
             }
 
+            // Broadcast the loaded/changed value to clients. Without a driver
+            // handler, sqmLimit falls through to DefaultDevice::ISNewNumber, which
+            // update()s the value internally but never apply()s it, so a config
+            // load would silently leave connected clients on the skeleton default.
+            if (nvp.isNameMatch("sqmLimit"))
+            {
+                nvp.update(values, names, n);
+                nvp.setState(IPS_OK);
+                nvp.apply();
+
+                return true;
+            }
+
             if (nvp.isNameMatch("skyCorrection"))
             {
                 // Bound by n, not by the vector size: a client may send a subset.
